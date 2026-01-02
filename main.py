@@ -1,13 +1,29 @@
 import discord
-import os # Importante para ler a senha do site
+import os
 from discord.ext import commands
 from discord.ui import Button, View
+from flask import Flask
+from threading import Thread
 
-# --- CONFIGURAÇÕES SEGURAS ---
-# O bot vai buscar a senha nas configurações do Render/Replit
-TOKEN = os.environ.get("DISCORD_TOKEN") 
+# --- CÓDIGO PARA ENGANAR O RENDER (LIGA UM SITE FALSO) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "O Bot está vivo!"
+
+def run():
+  app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+# ---------------------------------------------------------
+
+# --- CONFIGURAÇÕES ---
+TOKEN = os.environ.get("DISCORD_TOKEN")
 CHAVE_PIX = "aquamatynho@gmail.com"
-NOME_DO_PIX = "Vendedor" 
+NOME_DO_PIX = "Vendedor"
 
 PRODUTOS = {
     "diamante": "💎 Código Diamante: ABCD-1234-TESTE",
@@ -15,7 +31,7 @@ PRODUTOS = {
     "nitro": "🚀 Nitro Link: https://discord.gift/codigo_exemplo"
 }
 
-# --- CÓDIGO DO BOT ---
+# --- BOT ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -96,8 +112,9 @@ async def setup(ctx):
     embed = discord.Embed(title="🛒 Loja do Bot", description="Escolha seu produto no menu abaixo:", color=0x0000ff)
     await ctx.send(embed=embed, view=ViewLoja())
 
-# Se o token não for encontrado, avisa no log
+# --- LIGA TUDO ---
 if TOKEN:
-    bot.run(TOKEN)
+    keep_alive() # Liga o site falso
+    bot.run(TOKEN) # Liga o bot
 else:
-    print("ERRO: Token não encontrado nas variáveis de ambiente!")
+    print("ERRO: Token não encontrado!")
