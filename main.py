@@ -1,120 +1,144 @@
 import discord
-import os
 from discord.ext import commands
-from discord.ui import Button, View
+from discord.ui import View, Button
 from flask import Flask
 from threading import Thread
 
-# --- CÓDIGO PARA ENGANAR O RENDER (LIGA UM SITE FALSO) ---
-app = Flask('')
+# ================= CONFIGURAÇÕES =================
 
-@app.route('/')
+TOKEN = "MTQ1Njc3MzU2ODUyMzE0NTI0MQ.GwOAAn.z1LZ8YC5RDQONKK8wZDItSE2-9D8siRhZt2zJ0"  # Token do bot
+ADMIN_ID = 123456789012345678  # COLE SEU ID DO DISCORD AQUI
+PIX_CHAVE = "aquamatynho@gmail.com"
+
+# ================= KEEP ALIVE (RENDER) =================
+
+app = Flask("keep_alive")
+
+@app.route("/")
 def home():
-    return "O Bot está vivo!"
+    return "Bot Online"
 
-def run():
-  app.run(host='0.0.0.0', port=8080)
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
 
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-# ---------------------------------------------------------
+Thread(target=run_flask).start()
 
-# --- CONFIGURAÇÕES ---
-TOKEN = os.environ.get("DISCORD_TOKEN")
-CHAVE_PIX = "aquamatynho@gmail.com"
-NOME_DO_PIX = "Vendedor"
+# ================= BOT =================
 
-PRODUTOS = {
-    "diamante": "💎 Código Diamante: ABCD-1234-TESTE",
-    "vip": "👑 Cargo VIP: Envie seu nick para eu ativar!",
-    "nitro": "🚀 Nitro Link: https://discord.gift/codigo_exemplo"
-}
-
-# --- BOT ---
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
 intents.members = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-class PainelAdmin(View):
-    def __init__(self, produto_key):
-        super().__init__(timeout=None)
-        self.produto_key = produto_key
+# ================= CARRINHO =================
 
-    @discord.ui.button(label="✅ Aprovar Pagamento", style=discord.ButtonStyle.green)
-    async def aprovar(self, interaction: discord.Interaction, button: Button):
-        conteudo = PRODUTOS.get(self.produto_key)
-        await interaction.response.send_message(f"✅ **Pagamento Confirmado!**\n\n{conteudo}")
-        await interaction.channel.send(f"{interaction.user.mention} liberou o produto! Este carrinho será fechado em breve.")
-        button.disabled = True
-        await interaction.message.edit(view=self)
-
-    @discord.ui.button(label="❌ Cancelar", style=discord.ButtonStyle.red)
-    async def cancelar(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("❌ Venda cancelada.")
-        await interaction.channel.delete()
-
-class BotaoPagar(View):
-    def __init__(self, produto_key):
-        super().__init__(timeout=None)
-        self.produto_key = produto_key
-
-    @discord.ui.button(label="💸 Já fiz o Pix", style=discord.ButtonStyle.blurple)
-    async def confirmar_pagamento(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message(f"🔔 {interaction.user.mention} avisou que pagou! Aguarde a verificação.", allowed_mentions=discord.AllowedMentions(users=True))
-        await interaction.channel.send("👑 **ADMIN:** O Pix chegou? Se sim, libere o produto abaixo:", view=PainelAdmin(self.produto_key))
-        button.disabled = True
-        await interaction.message.edit(view=self)
-
-class MenuSelecao(discord.ui.Select):
-    def __init__(self):
-        opcoes = [
-            discord.SelectOption(label="Diamantes", description="R$ 10,00", value="diamante", emoji="💎"),
-            discord.SelectOption(label="VIP", description="R$ 20,00", value="vip", emoji="👑"),
-            discord.SelectOption(label="Nitro", description="R$ 30,00", value="nitro", emoji="🚀")
-        ]
-        super().__init__(placeholder="Selecione um produto...", min_values=1, max_values=1, options=opcoes)
-
-    async def callback(self, interaction: discord.Interaction):
-        produto_escolhido = self.values[0]
-        guild = interaction.guild
-        categoria = discord.utils.get(guild.categories, name="🛒 Carrinhos")
-        
-        if not categoria:
-            categoria = await guild.create_category("🛒 Carrinhos")
-
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(read_messages=True)
-        }
-
-        canal = await guild.create_text_channel(f"compra-{interaction.user.name}", category=categoria, overwrites=overwrites)
-        await interaction.response.send_message(f"Seu carrinho foi aberto em {canal.mention}!", ephemeral=True)
-
-        embed = discord.Embed(title="Pagamento Pix", description=f"Produto: **{produto_escolhido.upper()}**", color=0x00ff00)
-        embed.add_field(name="Chave Pix (E-mail)", value=f"`{CHAVE_PIX}`", inline=False)
-        embed.set_footer(text="Ao pagar, clique no botão abaixo.")
-        await canal.send(f"{interaction.user.mention}", embed=embed, view=BotaoPagar(produto_escolhido))
-
-class ViewLoja(View):
+class ProdutoView(View):
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(MenuSelecao())
+
+        self.add_item(Button(label="💎 Diamante", style=discord.ButtonStyle.primary, custom_id="diamante"))
+        self.add_item(Button(label="👑 VIP", style=discord.ButtonStyle.success, custom_id="vip"))
+        self.add_item(Button(label="🔥 Nitro", style=discord.ButtonStyle.danger, custom_id="nitro"))
+
+class PixView(View):
+    def __init__(self, cliente, produto):
+        super().__init__(timeout=None)
+
+        self.cliente = cliente
+        self.produto = produto
+
+        self.add_item(Button(label="✅ Já fiz o Pix", style=discord.ButtonStyle.success, custom_id="pago"))
+
+# ================= EVENTOS =================
 
 @bot.event
 async def on_ready():
-    print(f'Bot Online! Logado como {bot.user}')
+    print("Bot ligado com sucesso!")
 
 @bot.command()
 async def setup(ctx):
-    embed = discord.Embed(title="🛒 Loja do Bot", description="Escolha seu produto no menu abaixo:", color=0x0000ff)
-    await ctx.send(embed=embed, view=ViewLoja())
+    embed = discord.Embed(
+        title="🛒 Loja Oficial",
+        description="Escolha um produto abaixo:",
+        color=0x00ff00
+    )
+    await ctx.send(embed=embed, view=ProdutoView())
 
-# --- LIGA TUDO ---
-if TOKEN:
-    keep_alive() # Liga o site falso
-    bot.run(TOKEN) # Liga o bot
-else:
-    print("ERRO: Token não encontrado!")
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    if interaction.type != discord.InteractionType.component:
+        return
+
+    user = interaction.user
+    guild = interaction.guild
+
+    # ===== PRODUTO SELECIONADO =====
+    if interaction.data["custom_id"] in ["diamante", "vip", "nitro"]:
+        produto = interaction.data["custom_id"]
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            user: discord.PermissionOverwrite(view_channel=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True)
+        }
+
+        canal = await guild.create_text_channel(
+            name=f"🛒-{user.name}",
+            overwrites=overwrites
+        )
+
+        embed = discord.Embed(
+            title="🧾 Carrinho Criado",
+            description=(
+                f"**Produto:** {produto.upper()}\n\n"
+                f"💰 **Pix para pagamento:**\n`{PIX_CHAVE}`\n\n"
+                "Após pagar, clique no botão abaixo."
+            ),
+            color=0x00ff00
+        )
+
+        await canal.send(embed=embed, view=PixView(user, produto))
+        await interaction.response.send_message("Carrinho criado com sucesso!", ephemeral=True)
+
+    # ===== CLIENTE CLICOU EM PAGUEI =====
+    elif interaction.data["custom_id"] == "pago":
+        admin = await bot.fetch_user(ADMIN_ID)
+
+        embed = discord.Embed(
+            title="💰 Novo Pagamento",
+            description=(
+                f"👤 Cliente: {interaction.user.mention}\n"
+                f"📦 Produto: **{interaction.channel.name}**"
+            ),
+            color=0xffff00
+        )
+
+        view = View()
+        view.add_item(Button(label="✔ Aprovar", style=discord.ButtonStyle.success, custom_id=str(interaction.channel.id)))
+
+        await admin.send(embed=embed, view=view)
+        await interaction.response.send_message("Pagamento enviado para aprovação!", ephemeral=True)
+
+    # ===== ADMIN APROVOU =====
+    elif interaction.user.id == ADMIN_ID:
+        canal_id = int(interaction.data["custom_id"])
+        canal = bot.get_channel(canal_id)
+
+        if canal:
+            embed = discord.Embed(
+                title="✅ Pagamento Aprovado",
+                description=(
+                    "Pagamento confirmado!\n\n"
+                    "**Produto entregue com sucesso.**\n"
+                    "Obrigado pela compra!"
+                ),
+                color=0x00ff00
+            )
+            await canal.send(embed=embed)
+            await interaction.response.send_message("Produto entregue com sucesso!", ephemeral=True)
+
+# ================= START =================
+
+bot.run(TOKEN)
